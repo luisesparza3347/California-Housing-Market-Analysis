@@ -36,30 +36,6 @@ story against a longer, rolling sample (currently 1990Q1 through 2026Q2, 146
 quarters), with HPI_chg_lag1 still dominant at p on the order of 1e-33 and
 the three macro terms still statistically indistinguishable from zero.
 
-### An earlier claim that didn't survive a rebuild, and what replaced it
-
-An earlier writeup of this project reported that, before the HPI lag term
-was added, unemployment change looked significant on its own, with a
-coefficient near -0.265 and p around 0.003, and that adding the lag killed
-that effect. That comparison is a genuinely useful story about a confound
-disappearing once autocorrelation is handled properly, so it was worth
-trying to carry forward into this rebuild.
-
-It didn't reproduce. Refitting the no-lag model against the current pipeline
-under several plausible specifications (percent-change or point-difference
-for the rate variables, HAC or plain OLS standard errors, quarter-over-quarter
-or year-over-year changes) never produced both that coefficient and that
-p-value together, and checking the git history of the script that became
-`fetch.py` and `model.py` shows it never computed a no-lag model at all, in
-any commit. There's no code anywhere in this project's history that
-generated those two numbers, so they most likely came from the earlier Word
-writeup, which is exactly the document this repo already excludes because of
-data quality problems elsewhere in it (see "Locked decisions" below). Rather
-than repeat a number that can't be traced to reproducible code, it's
-dropped, and the underlying question the story was asking (is the changes
-model's design actually justified, or just asserted) got answered properly
-instead. See "Model diagnostics" below for what replaced it.
-
 ## Model diagnostics
 
 `model.py` now runs four checks against its own design, and writes the
@@ -206,8 +182,7 @@ which re-ran the entire build as a side effect just to print column names.
 
 **The earlier Word writeup does not go in this repo.** It had figures from
 2023 mislabeled as 2024, and several appendices that were visibly AI
-generated. This README replaces it, including auditing the writeup's own
-unreproducible claim above rather than quietly dropping it.
+generated. This README replaces it.
 
 ## Repository layout
 
