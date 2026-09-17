@@ -162,8 +162,12 @@ frame explicitly, with the reasoning recorded in the module docstring and in
 **Everything writes to disk.** `fetch.py` writes each raw series to
 `data/raw/` as parquet, at its native reporting frequency, not resampled.
 `model.py` reads that parquet, resamples to quarterly itself, and writes
-`data/model_output.json`. A scheduled job that leaves no artifact behind
-would defeat the point of running on a schedule.
+`data/model_output.json`. It also writes `data/quarterly_changes.parquet`,
+the row-level quarterly data the changes model is actually fit on, since
+that used to be built in memory and thrown away, leaving no way to look at
+the relationship itself rather than only the regression's conclusions about
+it. A scheduled job that leaves no artifact behind would defeat the point of
+running on a schedule.
 
 **Validation runs on every fetch.** Because this pulls from a live API on a
 schedule, it can fail in ways a static, already-downloaded dataset can't.
@@ -173,15 +177,17 @@ against a threshold set per series' normal reporting lag. A failed assert
 exits with a nonzero status and prints to stderr, so the job fails loudly
 instead of writing partial or bad data.
 
-**The API computes nothing.** `src/api.py` is a FastAPI service with three
+**The API computes nothing.** `src/api.py` is a FastAPI service with four
 routes, `/health` for the k8s probes, `/model` (the full contents of
-`model_output.json`, unmodified), and `/model/coefficients` (just the
-changes-model coefficient table). It reads whatever the fetch-and-model job
-most recently wrote to the volume, mounted read-only. If the volume is empty
-or the file isn't there yet, every route that needs it returns a 503 with a
-clear message rather than falling back to fetching or fitting anything
-itself, which was verified directly by removing `model_output.json` and
-confirming the 503.
+`model_output.json`, unmodified), `/model/coefficients` (just the
+changes-model coefficient table), and `/data/quarterly-changes` (the row-level
+quarterly data behind that table, one JSON record per quarter, for a chart
+that shows the actual relationship rather than the regression's summary of
+it). It reads whatever the fetch-and-model job most recently wrote to the
+volume, mounted read-only. If the volume is empty or the file isn't there
+yet, every route that needs it returns a 503 with a clear message rather
+than falling back to fetching or fitting anything itself, which was verified
+directly by removing `model_output.json` and confirming the 503.
 
 **The metro cross-section stays, reframed as Power BI data prep, not a
 regression dataset.** The 24 row build (4 CBSAs by 6 dates in 2024) was
@@ -280,6 +286,7 @@ independent of whether the CronJob has run yet.
 ```powershell
 curl http://localhost:8080/health
 curl http://localhost:8080/model/coefficients
+curl http://localhost:8080/data/quarterly-changes
 ```
 
 The CronJob is scheduled daily at 06:00 UTC. To trigger a run immediately

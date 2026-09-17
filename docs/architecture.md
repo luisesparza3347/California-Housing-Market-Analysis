@@ -32,7 +32,8 @@ Only the Power BI dashboard rework is still outstanding.
                               |
                               | writes
                               v
-                   data/model_output.json  <-- same PersistentVolumeClaim
+                   data/model_output.json,        <-- same PersistentVolumeClaim
+                   data/quarterly_changes.parquet
                               |
                               | read-only mount
                               v
@@ -44,9 +45,13 @@ Only the Power BI dashboard rework is still outstanding.
                    +----------------------+       +-------------------+
 ```
 
-Power BI can also still read `data/*.csv` directly, and still does for the
-metro cross-section, which the API doesn't serve. The statewide model's
-coefficients are the part `/model/coefficients` makes available live instead.
+`quarterly_changes.parquet` is the row-level data the changes model is fit
+on (one row per quarter), not the fitted result, written specifically so a
+chart can show the actual relationship instead of only the regression's
+conclusions about it. It's served at `/data/quarterly-changes`.
+`/model/coefficients` still exists too, for a small live callout rather than
+a chart. Power BI can also still read `data/*.csv` directly, and still does
+for the metro cross-section, which the API doesn't serve.
 
 `src/build_metro_panel.py` runs independently of the fetch-and-model chain
 above. It reads seven local CSVs (population, HPI, CPI, mortgage, income,
@@ -122,3 +127,10 @@ that didn't pass validation.
   correctly through the NodePort mapping. Same as the CronJob's PVC
   persistence check, this was run against the live cluster, not assumed
   from the YAML.
+- After adding `/data/quarterly-changes`, the image was rebuilt again, the
+  Deployment restarted (`kubectl rollout restart`) to pick up the new route,
+  and a one-off Job from the CronJob's own spec re-ran `fetch.py` and
+  `model.py` to write `quarterly_changes.parquet` onto the PVC. `curl
+  http://localhost:8080/data/quarterly-changes` from the host returned 144
+  quarterly records, confirming the Deployment's restart and the Job's write
+  both landed on the same PVC the API pod already had mounted.
