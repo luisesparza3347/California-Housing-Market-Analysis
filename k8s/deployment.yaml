@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: housing-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: housing-api
+  template:
+    metadata:
+      labels:
+        app: housing-api
+    spec:
+      containers:
+        - name: housing-api
+          image: ca-housing-pipeline:dev
+          imagePullPolicy: IfNotPresent
+          # Same image as the CronJob; only the command changes.
+          command: ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            # Read-only: the API computes nothing and never writes to the
+            # volume. Only the CronJob's fetch-and-model command does.
+            - name: housing-data
+              mountPath: /app/data
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: housing-data
+          persistentVolumeClaim:
+            claimName: housing-data
