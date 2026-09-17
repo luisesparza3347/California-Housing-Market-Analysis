@@ -137,7 +137,83 @@ def run_diagnostics(quarterly, chg, changes_model):
     }
 
 
-def to_result(quarterly, chg, changes_model, levels_model, diagnostics):
+def run_robustness_checks(chg):
+    """Three follow-up checks prompted by the literature comparison in the README.
+
+    HPI lag structure: published momentum research finds serial correlation
+    persisting 8-14 quarters, well past the single lag this project's core
+    model uses. Refitting HPI_chg on its own lags 1 through 8 checks how much
+    of that persistence shows up here, and at what order BIC stops rewarding
+    added lags.
+
+    Distributed lag macro: tests whether mortgage, unemployment, or CPI
+    changes predict HPI_chg with a delay (lags 0-3), controlling for
+    HPI_chg_lag1, since the core model only ever tested them contemporaneously
+    and transmission lags of a few quarters are economically plausible.
+
+    Seasonal control: CASTHPI is not seasonally adjusted (confirmed against
+    FRED's own series page), and mean HPI_chg differs by calendar quarter
+    (roughly 0.84 percent in Q1 versus 1.33 percent in Q3, 1990-present).
+    This refits the core model with calendar-quarter dummies added, to check
+    whether the headline result is an artifact of unremoved seasonality
+    rather than genuine macro irrelevance.
+    """
+    lag_structure = {}
+    lagged = chg[["HPI_chg"]].copy()
+    for lag in range(1, 9):
+        lagged[f"HPI_chg_lag{lag}"] = lagged["HPI_chg"].shift(lag)
+    for p in (1, 2, 4, 8):
+        predictors = [f"HPI_chg_lag{i}" for i in range(1, p + 1)]
+        d = lagged.dropna(subset=predictors + ["HPI_chg"])
+        X = sm.add_constant(d[predictors])
+        m = sm.OLS(d["HPI_chg"], X).fit(cov_type="HAC", cov_kwds={"maxlags": max(p, 4)})
+        lag_structure[f"AR{p}"] = {
+            "coefficients": {t: {"coef": float(m.params[t]), "p": float(m.pvalues[t])} for t in predictors},
+            "r_squared": float(m.rsquared),
+            "aic": float(m.aic),
+            "bic": float(m.bic),
+        }
+
+    distributed_lag = {}
+    base = chg.copy()
+    base["HPI_chg_lag1"] = base["HPI_chg"].shift(1)
+    for macro_var in ("Mortgage_30yr_chg", "Unemployment_Rate_chg", "CPI_chg"):
+        d = base[["HPI_chg", "HPI_chg_lag1"]].copy()
+        lag_cols = []
+        for lag in range(4):
+            col = f"lag{lag}"
+            d[col] = chg[macro_var].shift(lag)
+            lag_cols.append(col)
+        d = d.dropna()
+        X = sm.add_constant(d[["HPI_chg_lag1"] + lag_cols])
+        m = sm.OLS(d["HPI_chg"], X).fit(cov_type="HAC", cov_kwds={"maxlags": 4})
+        distributed_lag[macro_var] = {
+            "coefficients": {c: {"coef": float(m.params[c]), "p": float(m.pvalues[c])} for c in lag_cols},
+            "cumulative_effect_lags_0_3": float(sum(m.params[c] for c in lag_cols)),
+        }
+
+    seasonal = chg.copy()
+    for q in (2, 3, 4):
+        seasonal[f"Q{q}"] = (seasonal.index.quarter == q).astype(int)
+    seasonal_predictors = CHANGES_PREDICTORS + ["Q2", "Q3", "Q4"]
+    X = sm.add_constant(seasonal[seasonal_predictors])
+    y = seasonal["HPI_chg"]
+    m = sm.OLS(y, X).fit(cov_type="HAC", cov_kwds={"maxlags": 4})
+    f_test = m.f_test("Q2 = Q3 = Q4 = 0")
+
+    return {
+        "hpi_lag_structure": lag_structure,
+        "distributed_lag_macro": distributed_lag,
+        "seasonal_control": {
+            "coefficients": {t: {"coef": float(m.params[t]), "p": float(m.pvalues[t])} for t in seasonal_predictors},
+            "r_squared": float(m.rsquared),
+            "seasonal_joint_f_stat": float(f_test.fvalue),
+            "seasonal_joint_f_p": float(f_test.pvalue),
+        },
+    }
+
+
+def to_result(quarterly, chg, changes_model, levels_model, diagnostics, robustness):
     coefficients = {
         term: {
             "coef": float(changes_model.params[term]),
@@ -169,6 +245,7 @@ def to_result(quarterly, chg, changes_model, levels_model, diagnostics):
             "durbin_watson": float(sm.stats.durbin_watson(levels_model.resid)),
         },
         "diagnostics": diagnostics,
+        "robustness_checks": robustness,
         "notes": {
             "permits": (
                 "Fetched and validated by fetch.py but excluded from this "
@@ -187,6 +264,24 @@ def to_result(quarterly, chg, changes_model, levels_model, diagnostics):
                 "series spanning the 2008 and 2020 shocks and is exactly "
                 "what HAC standard errors are chosen to handle."
             ),
+            "robustness_checks": (
+                "Prompted by comparing this project's results against the "
+                "published house price momentum and mortgage-rate literature. "
+                "HPI's own momentum extends past one lag (BIC prefers AR4 "
+                "over AR8), consistent with published multi-quarter momentum "
+                "findings. None of the three macro variables become "
+                "significant at lags 0-3 either, so delayed transmission "
+                "doesn't rescue them. CASTHPI is not seasonally adjusted and "
+                "mean HPI_chg does differ by calendar quarter; adding "
+                "quarter dummies to the core model leaves HPI_chg_lag1 "
+                "essentially unchanged, but moves Unemployment_Rate_chg to "
+                "borderline significance (p around 0.07, versus 0.31 "
+                "without seasonal controls) and roughly triples the size of "
+                "the CPI_chg point estimate while it stays insignificant. "
+                "The headline finding survives; two of the supporting "
+                "numbers are less stable than they looked without this "
+                "check."
+            ),
         },
     }
 
@@ -198,8 +293,9 @@ def main():
     changes_model = fit_changes_model(chg)
     levels_model = fit_levels_model(quarterly)
     diagnostics = run_diagnostics(quarterly, chg, changes_model)
+    robustness = run_robustness_checks(chg)
 
-    result = to_result(quarterly, chg, changes_model, levels_model, diagnostics)
+    result = to_result(quarterly, chg, changes_model, levels_model, diagnostics, robustness)
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT_PATH, "w") as f:

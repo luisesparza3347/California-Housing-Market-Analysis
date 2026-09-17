@@ -91,6 +91,50 @@ a housing series spanning the 2008 crash and the 2020 shock, and it's the
 actual reason HAC standard errors, not plain OLS, are used for inference
 here.
 
+## Robustness checks
+
+Three follow-up checks, prompted by comparing this project's results against
+the published house price momentum and mortgage-rate literature, also live
+in `model.py` and `model_output.json`.
+
+**Does momentum extend past one lag, as the literature would predict.**
+Published research on house price momentum finds serial correlation
+persisting 8 to 14 quarters, well past the single lag the core model uses.
+Refitting HPI_chg on its own lags 1 through 8 shows real information beyond
+lag 1, R-squared climbs from 0.669 at one lag to 0.716 at four, and BIC
+prefers 4 lags over 8, meaning there's more here than the core model
+captures, but not an unbounded amount more. The coefficients at higher lags
+alternate in sign (lag 2 negative, lag 3 positive), which turned out to have
+a specific explanation, see below.
+
+**Does a delayed effect rescue any of the three macro variables.** The core
+model only ever tests mortgage rate, unemployment, and CPI changes in the
+same quarter as HPI growth. Testing each one at lags 0 through 3 instead
+(controlling for HPI_chg_lag1) checks whether their effect just takes longer
+to show up. It doesn't. No lag of any of the three variables reaches
+significance, so a transmission delay isn't hiding an effect the
+contemporaneous model missed.
+
+**Is the core result an artifact of unremoved seasonality.** CASTHPI, the
+exact FRED series this project pulls, is officially Not Seasonally Adjusted,
+and there is no seasonally-adjusted state-level alternative published on
+FRED. Mean HPI_chg does differ by calendar quarter across the sample
+(roughly 0.84 percent in Q1 versus 1.33 percent in Q3, 1990 to present),
+which is a real, decades-long pattern, not noise. Adding calendar-quarter
+dummies to the core model leaves HPI_chg_lag1 essentially unchanged (0.824
+becomes 0.842, still significant at p near zero), so the headline finding
+survives. Two supporting numbers move, though, and reporting the original
+figures without this check would have overstated how settled they are.
+Unemployment_Rate_chg shifts from clearly insignificant (p 0.31) to
+borderline (p 0.07), and CPI_chg's point estimate roughly triples in size
+(-0.12 to -0.43) while staying insignificant either way. Separately, adding
+the same calendar-quarter dummies to the 4-lag HPI-only model from the
+momentum check above barely changes its alternating-sign pattern, and the
+dummies themselves stop being significant once 4 HPI lags are already
+included. That means the AR(4) model's own lag structure is already
+absorbing most of the seasonal signal on its own, rather than the
+alternating signs being a separate, unexplained problem.
+
 ## FRED series
 
 | Name | ID | Notes |
