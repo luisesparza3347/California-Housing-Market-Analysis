@@ -40,10 +40,16 @@ R^2 0.673, Durbin-Watson 2.012. Levels version for contrast: R^2 0.903,
 Durbin-Watson 0.080, which is the spurious-trend result the changes model exists
 to avoid.
 
-Keep the intermediate result in the write-up. Before the lag was added,
-unemployment looked significant at -0.265 with p = 0.003. Adding the lag killed
-it. That is the confound-catching story and it is the most interesting thing in
-the project.
+**Correction, made during the Day 2 build.** The claim above, that unemployment
+looked significant at -0.265 (p = 0.003) before the lag was added, does not
+reproduce. It was checked against every specification tried (pct_change vs
+point-diff, HAC vs plain OLS, QoQ vs YoY) and against the full git history of
+the original `fred_loader.py`, which never computed a no-lag model at all. The
+number isn't in this project's code history anywhere; it most likely came from
+the excluded Word write-up and was carried into this file without being
+re-derived. Per this file's own rule, this turned out to be wrong, so it is
+being said plainly rather than worked around. It is deliberately not in the
+README. Full investigation notes are in `docs/session-log.md` under Day 2.
 
 ## FRED series
 
@@ -116,6 +122,8 @@ k8s/
 dashboard/               # .pbix + PNG screenshots
 docs/
   architecture.md        # diagram + data flow
+notebooks/
+  eda.ipynb              # not in the original plan, added post-Day-3
 data/                    # gitignored, local only
 figures/
 Dockerfile
@@ -130,17 +138,21 @@ One image, two entrypoints: the fetch job and the API server.
 Front-load the thinking-heavy work. Infra last, because it is the part that can
 eat a day if something goes sideways.
 
-**Day 1.** Restructure into folders, git init, gitignore before the first add.
+**Day 1, done.** Restructure into folders, git init, gitignore before the first add.
 Rework fred_loader into src/fetch.py and src/model.py with real outputs and the
 validation asserts. Resolve the Permits question. Fix the CPI comment. Reframe
 the metro script. Verify the model reproduces the coefficients above.
 
-**Day 2.** Dockerfile, build, run the fetch job in a container against a local
+**Day 2, done.** Dockerfile, build, run the fetch job in a container against a local
 volume mount. Then kind cluster, PVC, CronJob. Confirm the CronJob writes and the
 data survives a pod restart, which is the whole point of the PVC.
 
-**Day 3.** FastAPI, Deployment, Service. Power BI rework and screenshots. README
-and architecture diagram. Repo cleanup and push.
+**Day 3, API and k8s done, Power BI not.** FastAPI, Deployment, Service, and the
+README and architecture diagram were finished (a day ahead of schedule, during
+Day 2). A `/data/quarterly-changes` route and its `quarterly_changes.parquet`
+artifact were added afterward, for the Power BI rework to connect to. Power BI
+rework and screenshots are still outstanding, that is the only remaining item.
+Repo cleanup and push, still outstanding, held until the dashboard is in.
 
 ## The gate
 
@@ -149,52 +161,51 @@ service and let the CronJob write results that Power BI reads directly. Docker,
 the CronJob, and the PVC stay in all cases, because those are what the resume
 bullet claims. Do not cut the README to save time.
 
+**The gate never triggered.** Docker, the CronJob, the PVC, the API, and its
+Deployment and Service all work as built, verified against the live kind
+cluster, not just written and assumed correct.
+
 ## Resume bullet
 
 There is a live bullet on the resume describing this infrastructure. The work did
 not exist when the bullet was written. This build is what makes the bullet true.
 Write the final bullet to match what actually got built, not the other way around.
 
-## Current repo state (pre-restructure)
+## Repo state at project start (historical, kept for context)
 
-Not a git repo yet. None of the target structure exists yet, none of the locked
-decisions above have been applied yet. What is actually on disk right now.
+This section describes what was on disk before Day 1, before any of the
+locked decisions above were applied. It is no longer current, all of it has
+since been restructured, and is kept only so the "why" behind decisions 1-4
+and 7 above has the original mess to point back to.
 
-- `fred_loader.py` is the script that becomes `src/fetch.py` and `src/model.py`.
-  It prints to stdout and writes nothing (decision 2 not yet applied), still has
-  the Los Angeles CPI comment (fix pending), and has no validation asserts
-  (decision 4 not yet applied).
-- `Housing_and_Inflation_analysis.py` is the metro cross-section build, hardcoded
-  to four CBSAs and 2024 only. `Test.py` imports it as a module, which reruns the
-  whole build as a side effect (this is decision 7, cut it).
-- The seven input CSVs it reads (`California_Population_and_Population_Density.csv`,
-  `California_HPI_Index_filtered_data_set .csv`, `California_CPI_2024_Major-
-  Counties.csv`, `US_Fixed_Rate_Mortage_Weekly_2024.csv`,
-  `Median_Household_Income_2024.csv`, `Employment_Data_California_2024.csv`,
-  `Californio_housing_permits_2024_CBSA.csv`) live in the repo root by relative
-  path, not under `data/`.
-- `master.csv` in the repo root is not written by either script, it is a stray
-  manual export and not part of the pipeline.
-- No `requirements.txt` yet. The active `.venv` is Python 3.13.5 with pandas
-  2.3.3, numpy 2.3.4, statsmodels 0.14.5, scipy 1.16.3 installed, pin these when
-  writing it.
+- `fred_loader.py` was the script that became `src/fetch.py` and
+  `src/model.py`. It printed to stdout and wrote nothing, still had the Los
+  Angeles CPI comment, and had no validation asserts.
+- `Housing_and_Inflation_analysis.py` was the metro cross-section build,
+  hardcoded to four CBSAs and 2024 only, now `src/build_metro_panel.py`.
+  `Test.py` imported it as a module, rerunning the whole build as a side
+  effect just to print column names, now cut.
+- Seven input CSVs lived in the repo root by relative path, not under
+  `data/`. A stray `master.csv`, written by neither script, sat alongside
+  them and was deleted.
+- No `requirements.txt` existed.
+
+**For what is actually true right now, README.md's "Repository layout",
+"Locked decisions", and "What's left" sections are the current source of
+truth, not this file.** This file is the plan and the decisions behind it,
+not a live status tracker, and will drift out of date if treated as one.
 
 ## Commands
 
-PowerShell, from the repo root, with the venv activated:
-
-```powershell
-.venv\Scripts\Activate.ps1
-python fred_loader.py                       # current statewide model, prints only
-python Housing_and_Inflation_analysis.py    # current metro build, writes metro_cross_section_2024.csv
-```
-
-No test suite and no linter are configured yet.
+PowerShell, from the repo root, with the venv activated. See README.md's
+"Running it" section for the current, complete set, this is not repeated
+here to avoid two copies drifting apart.
 
 ## Notes on the metro cross-section script
 
-Worth knowing before touching `Housing_and_Inflation_analysis.py` or its future
-`build_metro_panel.py`.
+Worth knowing before touching `src/build_metro_panel.py` (formerly
+`Housing_and_Inflation_analysis.py`, relocated and reframed per decision 5,
+its analytical logic below is otherwise unchanged from the original).
 
 - It is hardcoded to exactly four CBSAs (LA, San Diego, San Francisco, Riverside)
   and the six CPI-reporting months of 2024 (`DATES_2024`). Extending to more
