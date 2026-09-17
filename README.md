@@ -146,6 +146,28 @@ meant to run today. The comment is now fixed in `fetch.py`.
 
 All series are resampled to quarterly means before modeling.
 
+## Data cleaning and exploration
+
+`notebooks/eda.ipynb` checks the five raw series for missing values and
+reporting gaps before they reach `model.py`, and shows exactly what the
+quarterly resampling and merge do to the sample. Two findings there are
+worth knowing without opening it.
+
+CPI and Unemployment_Rate are both missing an October 2025 observation, a
+real BLS data gap from the 2025 government shutdown (October 1 to
+November 12), not a fetch bug. BLS cancelled the October CPI print outright
+and has said the October 2025 unemployment rate will never be collected. It
+thins one quarter's average, it does not create a missing quarter.
+
+Exactly one quarter gets dropped from the regression frame, the current,
+still-incomplete trailing quarter, since HPI hasn't been published for it
+yet. That is the mechanism behind this README's earlier claim that
+`model.py` rolls its sample end date forward to the latest complete
+quarter, confirmed directly in the notebook rather than assumed.
+
+Not part of the containerized pipeline, matplotlib and Jupyter are
+local-only, deliberately left out of `requirements.txt`.
+
 ## Locked decisions
 
 These are choices made deliberately during the rebuild, not defaults left
@@ -233,6 +255,8 @@ k8s/
 dashboard/               # .pbix + screenshots (not yet built)
 docs/
   architecture.md
+notebooks/
+  eda.ipynb               # local-only, data cleaning and exploration
 data/                    # gitignored, local only
 figures/                 # coefficient plot + momentum scatter
 Dockerfile
