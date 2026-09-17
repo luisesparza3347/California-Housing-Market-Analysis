@@ -1,9 +1,8 @@
 # Architecture
 
-What's actually running, as of the end of Day 2 of this project's build.
-The API, Deployment, and Service in the diagram below are Day 3 and not yet
-built; they're included because the image and the volume are already
-designed around them existing.
+What's actually running, as of Day 3 of this project's build. The API,
+Deployment, and Service are built and verified against the kind cluster.
+Only the Power BI dashboard rework is still outstanding.
 
 ## Data flow
 
@@ -35,15 +34,19 @@ designed around them existing.
                               v
                    data/model_output.json  <-- same PersistentVolumeClaim
                               |
-                              | (Day 3, not yet built)
+                              | read-only mount
                               v
                    +----------------------+       +-------------------+
-                   |   src/api.py          | <---- |  Power BI reads   |
-                   |   FastAPI, reads the  |       |  data/*.csv       |
-                   |   volume, computes    |       |  directly, not    |
-                   |   nothing             |       |  through the API  |
+                   |   src/api.py          | <---- |  Power BI Desktop |
+                   |   FastAPI, reads the  |       |  Get Data > Web,  |
+                   |   volume, computes    |       |  localhost:8080,  |
+                   |   nothing             |       |  local-only       |
                    +----------------------+       +-------------------+
 ```
+
+Power BI can also still read `data/*.csv` directly, and still does for the
+metro cross-section, which the API doesn't serve. The statewide model's
+coefficients are the part `/model/coefficients` makes available live instead.
 
 `src/build_metro_panel.py` runs independently of the fetch-and-model chain
 above. It reads seven local CSVs (population, HPI, CPI, mortgage, income,
@@ -67,16 +70,17 @@ kind cluster "ca-housing"
   |            not pulled from a registry)
   |     command: python -m src.fetch && python -m src.model
   |
-  +-- (Day 3) Deployment running the same image with its command overridden
-  |     to `uvicorn src.api:app`, mounting the same PVC read-only
+  +-- Deployment "housing-api", 1 replica, same image with its command
+  |     overridden to `uvicorn src.api:app`, mounting the same PVC
+  |     read-only, readiness/liveness probes against /health
   |
-  +-- (Day 3) Service exposing that Deployment, NodePort 30080,
-        mapped to host port 8080 in kind-config.yaml
+  +-- Service "housing-api", type NodePort, exposing that Deployment on
+        NodePort 30080, mapped to host port 8080 in kind-config.yaml
 ```
 
-One image serves both the CronJob and the future API Deployment. The
-Dockerfile's default command is the fetch-and-model chain; the Deployment
-will override that command rather than needing a second image.
+One image serves both the CronJob and the API Deployment. The Dockerfile's
+default command is the fetch-and-model chain; the Deployment overrides that
+command rather than needing a second image.
 
 ## Why fetch and model run as one chained command, not two CronJobs
 
@@ -102,3 +106,19 @@ that didn't pass validation.
   brand-new pod, shows every parquet file and `model_output.json` still
   present. That's the actual guarantee a PVC is for, checked directly rather
   than assumed from Kubernetes documentation.
+
+## Verified during the Day 3 build
+
+- `src/api.py` tested locally with `uvicorn --reload`. `/health` and
+  `/model/coefficients` return 200 against a real `model_output.json`;
+  removing that file and re-requesting `/model` returns a 503 with a clear
+  message, not a fallback computation.
+- The image was rebuilt to include `api.py` and its dependencies, reloaded
+  into the running kind cluster, and `k8s/deployment.yaml` +
+  `k8s/service.yaml` applied against the same PVC the CronJob already
+  populated. The pod reached ready via its `/health` probe, and `curl
+  http://localhost:8080/health` and `curl
+  http://localhost:8080/model/coefficients` from the host both returned
+  correctly through the NodePort mapping. Same as the CronJob's PVC
+  persistence check, this was run against the live cluster, not assumed
+  from the YAML.

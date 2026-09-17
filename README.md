@@ -12,6 +12,10 @@ California house price growth is dominated by its own momentum. Once a one
 quarter lag of HPI growth is in the model, quarter-over-quarter changes in
 mortgage rates, unemployment, and inflation add nothing.
 
+![Coefficient plot showing HPI growth lag dominates, while the three macro terms sit at zero](figures/coefficients.png)
+
+![Scatter of HPI growth against its own prior-quarter value, with a fitted line](figures/momentum_scatter.png)
+
 Statewide changes model, HAC(4) standard errors, 1990Q1 through 2024Q4, 140
 quarters, 138 observations in the changes regression.
 
@@ -169,10 +173,15 @@ against a threshold set per series' normal reporting lag. A failed assert
 exits with a nonzero status and prints to stderr, so the job fails loudly
 instead of writing partial or bad data.
 
-**The API computes nothing.** Not yet built (see "What's left" below), but
-the design is fixed. It will read whatever the fetch-and-model job most
-recently wrote to the volume. If the volume is empty, it returns a clear
-error. It does not fall back to fetching or fitting anything itself.
+**The API computes nothing.** `src/api.py` is a FastAPI service with three
+routes, `/health` for the k8s probes, `/model` (the full contents of
+`model_output.json`, unmodified), and `/model/coefficients` (just the
+changes-model coefficient table). It reads whatever the fetch-and-model job
+most recently wrote to the volume, mounted read-only. If the volume is empty
+or the file isn't there yet, every route that needs it returns a 503 with a
+clear message rather than falling back to fetching or fitting anything
+itself, which was verified directly by removing `model_output.json` and
+confirming the 503.
 
 **The metro cross-section stays, reframed as Power BI data prep, not a
 regression dataset.** The 24 row build (4 CBSAs by 6 dates in 2024) was
@@ -185,8 +194,13 @@ isn't. The wide CBSA-month grid is what the Power BI dashboard was always
 actually for.
 
 **Power BI stays as a cleaned .pbix plus screenshots**, not served from the
-cluster, which isn't something Kubernetes can do for a desktop BI tool. Not
-yet reworked to match the statewide model (see "What's left").
+cluster, which isn't something Kubernetes can do for a desktop BI tool. The
+API is reachable from the host at `localhost:8080` while the kind cluster is
+running, so Power BI Desktop's Web connector can pull `/model/coefficients`
+directly (Get Data > Web) rather than the dashboard only ever reading static
+CSVs. That's still local-only, it works because the cluster is running on
+the same machine, not because anything here is publicly hosted. Not yet
+reworked to match the statewide model (see "What's left").
 
 **Test.py is cut.** It imported the metro cross-section script as a module,
 which re-ran the entire build as a side effect just to print column names.
@@ -201,29 +215,29 @@ generated. This README replaces it.
 src/
   fetch.py               # pull + validate five FRED series, write parquet
   model.py               # changes model with HAC(4) and diagnostics, writes JSON
-  api.py                 # FastAPI, reads volume, computes nothing (Day 3, not yet built)
+  api.py                 # FastAPI, reads volume, computes nothing
+  make_figures.py        # local-only, generates the two PNGs in figures/
   build_metro_panel.py   # Power BI data prep, reframed per the note above
 k8s/
   kind-config.yaml
   pvc.yaml
   cronjob.yaml
-  deployment.yaml         # Day 3, not yet built
-  service.yaml            # Day 3, not yet built
-dashboard/               # .pbix + screenshots (Day 3, not yet built)
+  deployment.yaml         # runs the API, verified against the kind cluster
+  service.yaml            # NodePort 30080, verified against the kind cluster
+dashboard/               # .pbix + screenshots (not yet built)
 docs/
   architecture.md
 data/                    # gitignored, local only
-figures/
+figures/                 # coefficient plot + momentum scatter
 Dockerfile
 README.md
 requirements.txt
 ```
 
 One image, two entrypoints. The Dockerfile's default command chains
-`fetch.py` then `model.py`, which is what the CronJob runs. The Day 3
-Deployment will override that same image's command to run the API server
-instead, so nothing about the image changes between the batch job and the
-API.
+`fetch.py` then `model.py`, which is what the CronJob runs. The Deployment
+overrides that same image's command to run `uvicorn src.api:app` instead, so
+nothing about the image changes between the batch job and the API.
 
 ## Running it
 
@@ -234,6 +248,8 @@ PowerShell, from the repo root, with the venv activated.
 python src\fetch.py             # pulls and validates the 5 FRED series, writes data\raw\*.parquet
 python src\model.py             # fits the model, writes data\model_output.json
 python src\build_metro_panel.py # builds the Power BI cross-section
+python src\make_figures.py      # regenerates figures\*.png from the above (needs matplotlib)
+uvicorn src.api:app --reload    # serves model_output.json at localhost:8000
 ```
 
 ### In Docker
@@ -253,6 +269,17 @@ kind create cluster --name ca-housing --config k8s\kind-config.yaml
 kind load docker-image ca-housing-pipeline:dev --name ca-housing
 kubectl apply -f k8s\pvc.yaml
 kubectl apply -f k8s\cronjob.yaml
+kubectl apply -f k8s\deployment.yaml
+kubectl apply -f k8s\service.yaml
+```
+
+Once the Deployment's pod is ready, the API is reachable from the host at
+`localhost:8080` (the NodePort mapping reserved in `kind-config.yaml`),
+independent of whether the CronJob has run yet.
+
+```powershell
+curl http://localhost:8080/health
+curl http://localhost:8080/model/coefficients
 ```
 
 The CronJob is scheduled daily at 06:00 UTC. To trigger a run immediately
@@ -263,7 +290,7 @@ kubectl create job --from=cronjob/fetch-and-model manual-test
 kubectl logs job/manual-test
 ```
 
-This was tested end to end during the build. a Job created this way ran
+This was tested end to end during the build. A Job created this way ran
 successfully against the PVC, and after deleting that Job's pod entirely, a
 fresh pod mounted the same PVC and could still read every parquet file and
 `model_output.json` it had written, which is the actual point of using a
@@ -271,16 +298,15 @@ PVC instead of the container's own filesystem.
 
 ## What's left
 
-Per the build order this project followed, Day 1 and Day 2 are done. Day 3
-is not started.
+Per the build order this project followed, Day 1 and Day 2 are done. Of Day
+3, the API and its Deployment/Service are done and verified; the dashboard
+is not.
 
-- `src/api.py`, a FastAPI service that reads `data/model_output.json` off
-  the volume and returns it, computing nothing itself.
-- `k8s/deployment.yaml` and `k8s/service.yaml` for that API.
 - Power BI dashboard rework to match the statewide model, plus screenshots
-  in `dashboard/`.
+  in `dashboard/`. The rework can pull `/model/coefficients` live from the
+  API (see "Locked decisions" above) rather than only reading static CSVs.
 
 If the Kubernetes pieces hadn't been working by the end of Day 2, the plan
 was to cut the FastAPI service and let Power BI read the CronJob's output
-directly. That fallback wasn't needed. Docker, the CronJob, and the PVC all
-work as built, verified above.
+directly. That fallback wasn't needed. Docker, the CronJob, the PVC, the
+API, and its Deployment and Service all work as built, verified above.
