@@ -70,26 +70,37 @@ here.
 ## Robustness checks
 
 Three follow-up checks, prompted by comparing this project's results against
-the published house price momentum and mortgage-rate literature, also live
-in `model.py` and `model_output.json`.
+two specific published sources, also live in `model.py` and
+`model_output.json`. Both sources are named directly rather than paraphrased
+as "the literature," since a claim like this is only as good as the citation
+behind it.
 
-**Does momentum extend past one lag, as the literature would predict.**
-Published research on house price momentum finds serial correlation
-persisting 8 to 14 quarters, well past the single lag the core model uses.
-Refitting HPI_chg on its own lags 1 through 8 shows real information beyond
-lag 1, R-squared climbs from 0.669 at one lag to 0.716 at four, and BIC
-prefers 4 lags over 8, meaning there's more here than the core model
-captures, but not an unbounded amount more. The coefficients at higher lags
-alternate in sign (lag 2 negative, lag 3 positive), which turned out to have
-a specific explanation, see below.
+- Adam Guren, "House Price Momentum and Strategic Complementarity,"
+  *Journal of Political Economy* 126(3), 2018, pp. 1172-1218.
+- William D. Larson, "Effects of Mortgage Interest Rates on House Price
+  Appreciation, The Role of Payment Constraints," FHFA Working Paper 22-04,
+  2022.
 
-**Does a delayed effect rescue any of the three macro variables.** The core
-model only ever tests mortgage rate, unemployment, and CPI changes in the
-same quarter as HPI growth. Testing each one at lags 0 through 3 instead
-(controlling for HPI_chg_lag1) checks whether their effect just takes longer
-to show up. It doesn't. No lag of any of the three variables reaches
-significance, so a transmission delay isn't hiding an effect the
-contemporaneous model missed.
+**Does momentum extend past one lag, as Guren's research would predict.**
+Guren documents house price serial correlation persisting 8 to 14 quarters,
+well past the single lag the core model uses. Refitting HPI_chg on its own
+lags 1 through 8 shows real information beyond lag 1, R-squared climbs from
+0.669 at one lag to 0.716 at four, and BIC prefers 4 lags over 8, meaning
+there's more here than the core model captures, but not an unbounded amount
+more. The coefficients at higher lags alternate in sign (lag 2 negative, lag
+3 positive), which turned out to have a specific explanation, see below.
+
+**Does a delayed effect rescue any of the three macro variables, per
+Larson's transmission mechanism.** Larson finds mortgage rate changes affect
+house prices partly through payment constraints on borrowers, a channel that
+plausibly takes more than one quarter to show up, and the core model here
+only ever tests mortgage rate, unemployment, and CPI changes in the same
+quarter as HPI growth. Testing each one at lags 0 through 3 instead
+(controlling for HPI_chg_lag1) checks whether that kind of delayed effect is
+present in this state-level, quarterly data. It isn't. No lag of any of the
+three variables reaches significance, so a transmission delay isn't hiding
+an effect the contemporaneous model missed, at least not one this
+specification can detect.
 
 **Is the core result an artifact of unremoved seasonality.** CASTHPI, the
 exact FRED series this project pulls, is officially Not Seasonally Adjusted,
