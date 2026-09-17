@@ -1,0 +1,10 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    # NodePort 30080 -> host 8080, reserved for the FastAPI Service (Day 3).
+    # Set here so the cluster doesn't need to be recreated when the API lands.
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP

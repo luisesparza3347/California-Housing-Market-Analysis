@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fetch-and-model
+spec:
+  # Daily at 06:00 UTC. No FRED series here updates faster than daily (the
+  # fastest, mortgage rates, is weekly), and fetch.py always re-pulls each
+  # series' full history rather than incrementally, so daily costs nothing
+  # extra in complexity.
+  schedule: "0 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: fetch-and-model
+              image: ca-housing-pipeline:dev
+              imagePullPolicy: IfNotPresent
+              volumeMounts:
+                - name: housing-data
+                  mountPath: /app/data
+          volumes:
+            - name: housing-data
+              persistentVolumeClaim:
+                claimName: housing-data
