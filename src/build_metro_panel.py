@@ -1,6 +1,15 @@
 # This program builds a metro-level cross-section for four California CBSAs in
 # 2024. It reconciles CPI, building permits, population, mortgage rates, and
 # unemployment onto a shared CBSA-month grid and outputs one table for Power BI.
+#
+# This is not a regression dataset. HPI, Mortgage_30yr, and Unemployment_Rate
+# are statewide or national series keyed on Date only, so across 4 CBSAs x 6
+# dates they carry no cross-metro variation at all. Only CPI genuinely varies
+# by metro, and regressing HPI on CPI here returns a null coefficient at
+# p = 0.97: 24 rows are effectively 6 time points repeated four times, not 24
+# independent observations. The output stays because the wide CBSA-month grid
+# is what the Power BI dashboard needs, not because it supports a regression.
+# See the README for the full account of this diagnosis.
 
 import unicodedata
 import numpy as np
@@ -30,7 +39,7 @@ cpi = pd.read_csv("data/California_CPI_2024_Major-Counties.csv")
 mortgage = pd.read_csv("data/US_Fixed_Rate_Mortage_Weekly_2024.csv")
 income = pd.read_csv("data/Median_Household_Income_2024.csv")
 employment = pd.read_csv("data/Employment_Data_California_2024.csv")
-permits = pd.read_csv("data/Californio_housing_permits_2024_CBSA.csv")
+permits = pd.read_csv("data/California_housing_permits_2024_CBSA.csv")
 
 permits.columns = permits.columns.str.strip()
 
