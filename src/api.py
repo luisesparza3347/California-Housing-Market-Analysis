@@ -9,11 +9,13 @@ anything itself.
 import json
 from pathlib import Path
 
+import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 MODEL_OUTPUT_PATH = DATA_DIR / "model_output.json"
+QUARTERLY_CHANGES_PATH = DATA_DIR / "quarterly_changes.parquet"
 
 app = FastAPI(title="ca-housing-pipeline API")
 
@@ -64,3 +66,26 @@ def coefficients():
             ),
         )
     return JSONResponse(result["changes_model"]["coefficients"])
+
+
+@app.get("/data/quarterly-changes")
+def quarterly_changes():
+    """The row-level quarterly data model.py fit the changes model on, one row per quarter.
+
+    Not a fitted result, the actual observations, so a chart of this can show
+    the relationship itself rather than the regression's conclusions about it.
+    """
+    try:
+        df = pd.read_parquet(QUARTERLY_CHANGES_PATH)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"{QUARTERLY_CHANGES_PATH.name} not found on the volume. "
+                "The fetch-and-model CronJob hasn't completed a run yet."
+            ),
+        )
+    df = df.reset_index()
+    df.columns = ["date"] + list(df.columns[1:])
+    df["date"] = pd.to_datetime(df["date"]).dt.date.astype(str)
+    return JSONResponse(df.to_dict(orient="records"))

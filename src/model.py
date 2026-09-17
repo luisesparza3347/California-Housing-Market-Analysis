@@ -40,6 +40,7 @@ CHANGE_TO_LEVEL = {
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 RAW_DIR = DATA_DIR / "raw"
 OUT_PATH = DATA_DIR / "model_output.json"
+CHANGES_PATH = DATA_DIR / "quarterly_changes.parquet"
 
 # HPI, Mortgage_30yr, Unemployment_Rate, CPI. Permits is intentionally absent,
 # see module docstring.
@@ -301,12 +302,19 @@ def main():
     with open(OUT_PATH, "w") as f:
         json.dump(result, f, indent=2)
 
+    # The row-level data behind the coefficients, not just the fitted summary.
+    # Written so a consumer (the API's /data/quarterly-changes route, in
+    # practice) can plot the actual relationship instead of only reading the
+    # regression's own conclusions about it.
+    chg.to_parquet(CHANGES_PATH)
+
     print(f"sample: {result['sample']}")
     print(f"changes model R^2 {result['changes_model']['r_squared']:.3f}, "
           f"DW {result['changes_model']['durbin_watson']:.3f}")
     print(f"levels model R^2 {result['levels_model_contrast']['r_squared']:.3f}, "
           f"DW {result['levels_model_contrast']['durbin_watson']:.3f}")
     print(f"wrote {OUT_PATH}")
+    print(f"wrote {CHANGES_PATH}")
 
 
 if __name__ == "__main__":
