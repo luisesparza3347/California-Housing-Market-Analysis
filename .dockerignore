@@ -1,0 +1,10 @@
+.venv/
+.git/
+.idea/
+data/
+dashboard/
+figures/
+docs/
+k8s/
+__pycache__/
+*.pyc
