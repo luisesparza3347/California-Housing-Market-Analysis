@@ -10,8 +10,8 @@ dropped here instead, explicitly, rather than silently shrinking the sample.
 The end of the sample is not pinned to a fixed date. START stays at 1990Q1,
 but END rolls forward to whatever the latest complete quarter in the raw data
 is, so a fresh cron run picks up new quarters automatically. The 1990Q1-2024Q4
-result in CLAUDE.md and the README is the finding as reported at that date,
-not a ceiling this script re-imposes on every future run.
+result in the README is the finding as reported at that date, not a ceiling
+this script re-imposes on every future run.
 """
 
 import json

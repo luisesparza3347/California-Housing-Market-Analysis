@@ -1,6 +1,6 @@
 """FastAPI service that reads model_output.json off the volume. Computes nothing.
 
-Entrypoint for the Day 3 Deployment. The CronJob is the only thing that ever
+Entrypoint for the Deployment. The CronJob is the only thing that ever
 writes data/model_output.json; this process only ever reads it. If the file
 isn't there, the API says so and returns an error, it does not fetch or fit
 anything itself.

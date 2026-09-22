@@ -1,8 +1,8 @@
 # Architecture
 
-What's actually running, as of Day 3 of this project's build. The API,
-Deployment, and Service are built and verified against the kind cluster.
-Only the Power BI dashboard rework is still outstanding.
+What's actually running. The API, Deployment, and Service are built and
+verified against the kind cluster. Only the Power BI dashboard rework is
+still outstanding.
 
 ## Data flow
 
@@ -59,7 +59,7 @@ employment, permits) rather than pulling from FRED directly, and writes
 `data/metro_cross_section_2024.csv`, which is what the Power BI dashboard
 actually reads. It is data prep for the dashboard, not part of the
 statewide regression pipeline, and not a regression dataset itself; see the
-README's "Locked decisions" section for why.
+README's "Metro cross-section" section for why.
 
 ## What's deployed in the kind cluster
 
@@ -98,7 +98,7 @@ failed fetch (a failed assert, a network error) stops the command before
 model.py ever runs, so `model_output.json` is never rewritten against data
 that didn't pass validation.
 
-## Verified during the Day 2 build
+## Verification
 
 - Building the image and running it locally against a bind-mounted `data/`
   directory produces the same output as running `fetch.py` and `model.py`
@@ -111,8 +111,6 @@ that didn't pass validation.
   brand-new pod, shows every parquet file and `model_output.json` still
   present. That's the actual guarantee a PVC is for, checked directly rather
   than assumed from Kubernetes documentation.
-
-## Verified during the Day 3 build
 
 - `src/api.py` tested locally with `uvicorn --reload`. `/health` and
   `/model/coefficients` return 200 against a real `model_output.json`;
