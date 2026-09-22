@@ -40,6 +40,35 @@ story against a longer, rolling sample (currently 1990Q1 through 2026Q2, 146
 quarters), with HPI_chg_lag1 still dominant at p on the order of 1e-33 and
 the three macro terms still statistically indistinguishable from zero.
 
+## FRED series
+
+| Name | ID | Notes |
+|------|-----|-------|
+| HPI | CASTHPI | FHFA all-transactions, California, quarterly |
+| Mortgage_30yr | MORTGAGE30US | Freddie Mac PMMS 30 year, weekly |
+| Unemployment_Rate | CAUR | California, monthly |
+| CPI | CUUR0400SA0 | CPI-U West region, monthly |
+| Permits | CABPPRIV | CA private housing units authorized, monthly |
+
+The CPI series is CPI-U for the West region, not Los Angeles. An earlier
+version of this project's code had a comment claiming the CPI series was Los
+Angeles specific. It wasn't ever pulling a Los Angeles-only series; the
+comment was simply wrong. The Los Angeles series, CUURA421SA0, was
+discontinued in December 2017 as part of a BLS geographic revision, which is
+presumably why an LA-specific series was never a live option for a pipeline
+meant to run today. The comment is now fixed in `fetch.py`.
+
+Permits is fetched, validated, and written to disk like the other four
+series, but deliberately left out of the regression above. It was never
+part of the model, yet was still shrinking the merged sample through a
+`dropna()` call whenever it happened to be missing, a silent constraint
+from a column nobody was using. It's excluded from the regression frame
+explicitly now instead.
+
+All series are resampled to quarterly means before modeling, HPI_chg_lag1,
+Mortgage_30yr_chg, Unemployment_Rate_chg, and CPI_chg above are the change
+in each of the first four series, one quarter over the last.
+
 ## Model diagnostics
 
 `model.py` now runs four checks against its own design, and writes the
@@ -125,33 +154,6 @@ dummies themselves stop being significant once 4 HPI lags are already
 included. That means the AR(4) model's own lag structure is already
 absorbing most of the seasonal signal on its own, rather than the
 alternating signs being a separate, unexplained problem.
-
-## FRED series
-
-| Name | ID | Notes |
-|------|-----|-------|
-| HPI | CASTHPI | FHFA all-transactions, California, quarterly |
-| Mortgage_30yr | MORTGAGE30US | Freddie Mac PMMS 30 year, weekly |
-| Unemployment_Rate | CAUR | California, monthly |
-| CPI | CUUR0400SA0 | CPI-U West region, monthly |
-| Permits | CABPPRIV | CA private housing units authorized, monthly |
-
-The CPI series is CPI-U for the West region, not Los Angeles. An earlier
-version of this project's code had a comment claiming the CPI series was Los
-Angeles specific. It wasn't ever pulling a Los Angeles-only series; the
-comment was simply wrong. The Los Angeles series, CUURA421SA0, was
-discontinued in December 2017 as part of a BLS geographic revision, which is
-presumably why an LA-specific series was never a live option for a pipeline
-meant to run today. The comment is now fixed in `fetch.py`.
-
-Permits is fetched, validated, and written to disk like the other four
-series, but deliberately left out of the regression below. It was never
-part of the model, yet was still shrinking the merged sample through a
-`dropna()` call whenever it happened to be missing, a silent constraint
-from a column nobody was using. It's excluded from the regression frame
-explicitly now instead.
-
-All series are resampled to quarterly means before modeling.
 
 ## Metro cross-section
 
