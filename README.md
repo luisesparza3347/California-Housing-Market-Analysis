@@ -277,8 +277,9 @@ independent of whether the CronJob has run yet.
 
 ```powershell
 curl http://localhost:8080/health
-curl http://localhost:8080/model/coefficients
-curl http://localhost:8080/data/quarterly-changes
+curl http://localhost:8080/model                    # full model_output.json
+curl http://localhost:8080/model/coefficients        # just the coefficient table
+curl http://localhost:8080/data/quarterly-changes    # row-level data behind it
 ```
 
 The CronJob is scheduled daily at 06:00 UTC. To trigger a run immediately
