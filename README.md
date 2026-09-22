@@ -1,4 +1,4 @@
-# California House Price Pipeline
+# California Housing Market Analysis
 
 A scheduled data pipeline that pulls five California housing-related series
 from FRED, fits a statewide house price model, and builds a metro-level
@@ -144,7 +144,26 @@ discontinued in December 2017 as part of a BLS geographic revision, which is
 presumably why an LA-specific series was never a live option for a pipeline
 meant to run today. The comment is now fixed in `fetch.py`.
 
+Permits is fetched, validated, and written to disk like the other four
+series, but deliberately left out of the regression below. It was never
+part of the model, yet was still shrinking the merged sample through a
+`dropna()` call whenever it happened to be missing, a silent constraint
+from a column nobody was using. It's excluded from the regression frame
+explicitly now instead.
+
 All series are resampled to quarterly means before modeling.
+
+## Metro cross-section
+
+`src/build_metro_panel.py` builds a separate, wide CBSA-by-month grid (4
+CBSAs, 6 months of 2024) that feeds the Power BI dashboard. It isn't a
+regression dataset. HPI, mortgage rates, and unemployment vary by date
+only, carrying no cross-metro information at all, and only CPI genuinely
+varies by metro, with a null coefficient at p = 0.97 when tested directly.
+The 24 rows are effectively 6 time points repeated four times, not 24
+independent observations. It stays in the pipeline as data prep for the
+dashboard, which is what the wide format was always actually for, not as a
+second regression.
 
 ## Data cleaning and exploration
 
@@ -168,74 +187,23 @@ quarter, confirmed directly in the notebook rather than assumed.
 Not part of the containerized pipeline, matplotlib and Jupyter are
 local-only, deliberately left out of `requirements.txt`.
 
-## Locked decisions
+## Pipeline and API
 
-These are choices made deliberately during the rebuild, not defaults left
-unexamined.
+`fetch.py` writes each raw series to `data/raw/` as parquet at its native
+reporting frequency, and asserts on row count, date coverage, value ranges,
+and staleness before writing anything, so a bad pull fails the job loudly
+instead of landing partial data. `model.py` reads that parquet, resamples
+to quarterly, and writes `model_output.json` and `quarterly_changes.parquet`
+(the row-level data the regression is actually fit on, not just the fitted
+summary).
 
-**Permits is fetched and validated like the other four series, and excluded
-from the regression.** It was previously fetched, resampled, and never used
-in the model, while still constraining the sample through a `dropna()` call
-that happened to include it. That's a silent sample constraint from a column
-nobody was looking at. `model.py` now drops Permits from the regression
-frame explicitly, with the reasoning recorded in the module docstring and in
-`model_output.json`'s notes field, rather than leaving it in by accident.
-
-**Everything writes to disk.** `fetch.py` writes each raw series to
-`data/raw/` as parquet, at its native reporting frequency, not resampled.
-`model.py` reads that parquet, resamples to quarterly itself, and writes
-`data/model_output.json`. It also writes `data/quarterly_changes.parquet`,
-the row-level quarterly data the changes model is actually fit on, since
-that used to be built in memory and thrown away, leaving no way to look at
-the relationship itself rather than only the regression's conclusions about
-it. A scheduled job that leaves no artifact behind would defeat the point of
-running on a schedule.
-
-**Validation runs on every fetch.** Because this pulls from a live API on a
-schedule, it can fail in ways a static, already-downloaded dataset can't.
-`fetch.py` asserts on row count, date coverage back to 1990-01-01, plausible
-value ranges per series, and staleness of the most recent observation
-against a threshold set per series' normal reporting lag. A failed assert
-exits with a nonzero status and prints to stderr, so the job fails loudly
-instead of writing partial or bad data.
-
-**The API computes nothing.** `src/api.py` is a FastAPI service with four
-routes, `/health` for the k8s probes, `/model` (the full contents of
-`model_output.json`, unmodified), `/model/coefficients` (just the
-changes-model coefficient table), and `/data/quarterly-changes` (the row-level
-quarterly data behind that table, one JSON record per quarter, for a chart
-that shows the actual relationship rather than the regression's summary of
-it). It reads whatever the fetch-and-model job most recently wrote to the
-volume, mounted read-only. If the volume is empty or the file isn't there
-yet, every route that needs it returns a 503 with a clear message rather
-than falling back to fetching or fitting anything itself, which was verified
-directly by removing `model_output.json` and confirming the 503.
-
-**The metro cross-section stays, reframed as Power BI data prep, not a
-regression dataset.** The 24 row build (4 CBSAs by 6 dates in 2024) was
-diagnosed as effectively 6 time points repeated four times. HPI and both
-macro series vary by date only, carrying no cross-metro information at all,
-and only CPI genuinely varies by metro, with a null coefficient at p equal
-to 0.97 when tested. `src/build_metro_panel.py` now documents this plainly
-in its module comment rather than presenting the output as something it
-isn't. The wide CBSA-month grid is what the Power BI dashboard was always
-actually for.
-
-**Power BI stays as a cleaned .pbix plus screenshots**, not served from the
-cluster, which isn't something Kubernetes can do for a desktop BI tool. The
-API is reachable from the host at `localhost:8080` while the kind cluster is
-running, so Power BI Desktop's Web connector can pull `/model/coefficients`
-directly (Get Data > Web) rather than the dashboard only ever reading static
-CSVs. That's still local-only, it works because the cluster is running on
-the same machine, not because anything here is publicly hosted. Not yet
-reworked to match the statewide model (see "What's left").
-
-**Test.py is cut.** It imported the metro cross-section script as a module,
-which re-ran the entire build as a side effect just to print column names.
-
-**The earlier Word writeup does not go in this repo.** It had figures from
-2023 mislabeled as 2024, and several appendices that were visibly AI
-generated. This README replaces it.
+`src/api.py` reads whatever that job most recently wrote off the volume,
+mounted read-only, and nothing else, it does not fetch or fit anything
+itself. If the data isn't there yet, every route that needs it returns a
+503 with a clear message instead of silently falling back, verified
+directly by removing `model_output.json` and confirming the error. Routes
+are listed under "Running it" below. Full data flow diagram in
+`docs/architecture.md`.
 
 ## Repository layout
 
@@ -245,7 +213,7 @@ src/
   model.py               # changes model with HAC(4) and diagnostics, writes JSON
   api.py                 # FastAPI, reads volume, computes nothing
   make_figures.py        # local-only, generates the two PNGs in figures/
-  build_metro_panel.py   # Power BI data prep, reframed per the note above
+  build_metro_panel.py   # Power BI data prep, see "Metro cross-section" above
 k8s/
   kind-config.yaml
   pvc.yaml
@@ -327,17 +295,11 @@ fresh pod mounted the same PVC and could still read every parquet file and
 `model_output.json` it had written, which is the actual point of using a
 PVC instead of the container's own filesystem.
 
-## What's left
+## Next steps
 
-Per the build order this project followed, Day 1 and Day 2 are done. Of Day
-3, the API and its Deployment/Service are done and verified; the dashboard
-is not.
-
-- Power BI dashboard rework to match the statewide model, plus screenshots
-  in `dashboard/`. The rework can pull `/model/coefficients` live from the
-  API (see "Locked decisions" above) rather than only reading static CSVs.
-
-If the Kubernetes pieces hadn't been working by the end of Day 2, the plan
-was to cut the FastAPI service and let Power BI read the CronJob's output
-directly. That fallback wasn't needed. Docker, the CronJob, the PVC, the
-API, and its Deployment and Service all work as built, verified above.
+The Power BI dashboard is the one piece not yet reworked to match the
+statewide model. It can pull `/model/coefficients` and
+`/data/quarterly-changes` live from the API, via Power BI Desktop's Get
+Data > Web connector against a locally running kind cluster, instead of
+only reading static CSVs. Screenshots will land in `dashboard/` once it's
+done.
